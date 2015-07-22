@@ -64,11 +64,16 @@ describe("batcher test suit:", function () {
             expect(dataStructure.getCounter()).toBe(1);
         });
 
-        it("should return the number of operation flushed", function () {
+        it("should return the number of operation flushed (test case 1)", function () {
             var operationCount = 5;
             assumeNumOfRegisteredOperation(operationCount);
 
             expect(batcher.flush()).toBe(operationCount);
+        });
+
+        it("should return the number of operation flushed (test case 2)", function () {
+            setSequence([{'1a': 1, '1b': 2, '1c': 3, '1d': 4}, {'2a': 5}]);
+            expect(batcher.flush()).toBe(2);
         });
 
         it("should merge the dataToSet into one object (on multiple keys remember only the last", function () {
@@ -114,6 +119,61 @@ describe("batcher test suit:", function () {
 
         beforeEach(setUpTest);
 
+        function buildTimerMocks() {
+            var pendingTimers = [], timersCancelled = [], timersResolved = [], lastTimer;
+            var setTimeout = window.setTimeout.bind(window),
+                clearTimeout = window.clearTimeout.bind(window);
+
+            function setTimerMock(fn, interval) {
+                var id = setTimeout(function wrapperForOriginal() {
+                    _.pull(pendingTimers, id);
+                    timersResolved.push(id);
+                    fn();
+                }, interval);
+                pendingTimers.push(id);
+                lastTimer = id;
+                return id;
+            }
+
+            function clearTimerMock(id) {
+                _.pull(pendingTimers, id);
+                timersCancelled.push(id);
+                return clearTimeout(id);
+            }
+
+            spyOn(window, 'setTimeout').and.callFake(setTimerMock);
+            spyOn(window, 'clearTimeout').and.callFake(clearTimerMock);
+
+            return {
+                getPending: function () {
+                    return pendingTimers;
+                },
+                getCancelled: function () {
+                    return timersCancelled;
+                },
+                getResolved: function () {
+                    return timersResolved;
+                },
+                getLastTimerId: function (){
+                    return lastTimer;
+                }
+            };
+        }
+
+        it("for each setData should set a new timer and cancel the previous ones", function () {
+            var timers = buildTimerMocks();
+            assumeNumOfRegisteredOperation(4);
+            var numOfCancelledTimers = _.size(timers.getCancelled());
+            var numOfPendingTimers = _.size(timers.getPending());
+            expect(numOfCancelledTimers).toBe(3);
+            expect(numOfPendingTimers).toBe(1);
+        });
+
+        it("only the latest timer should be active after several calls to batcher.setData", function () {
+            var timers = buildTimerMocks();
+            assumeNumOfRegisteredOperation(5);
+            expect(timers.getPending()).toContain(timers.getLastTimerId());
+        });
 
         it("without flushing, the setData operation is asynchronous", function () {
             assumeNumOfRegisteredOperation(3);
